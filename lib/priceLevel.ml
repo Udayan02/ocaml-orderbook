@@ -49,15 +49,57 @@ let remove_order(level, order_id) =
 
   Queue.clear(level.orders);
   Queue.transfer(new_queue, level.orders);
-  !removed_order
+  !removed_order (* Simply return the referenced variable removed_order *)
 
 let execute_quantity(level, incoming_order, quantity_to_fill) =
   let trades = ref [] in
-  let quantity = ref quantity_to_fill in
-  
+  let remaining = ref quantity_to_fill in
+  while !remaining > 0 && not Queue.is_empty(level.orders) do
+    let front_order = Queue.peek(level.orders) in
+    let front_remaining = remaining_quantity(front_order) in
+    
+    if front_remaining <= !remaining then (
+      (* This means we can fully fill the front order *)
+      let filled_order = fill_order(front_order, front_quantity) in
+      let trade = {
+        symbol = incoming_order.symbol;
+        trade_id = Printf.sprintf "Trade_%s_%s" incoming_order.id front_order.id;
+        price = level.price;
+        quantity = front_remaining;
+        timestamp = Unix.gettimeofday();
+        buy_order_id = if is_buy(incoming_order) then incoming_order.id else front_order.id;
+        sell_order_id = if is_sell(incoming_order) then incoming_order.id else front_order.id;
+      } in
+      remaining := !remaining - front_remaining;
+      levels.total_qty <- levels.total_qty - front_remaining;
+      trades := trade :: !trades;  (* Remember, :: is cons, add to front of list *)
+      ignore Queue.pop(level.orders);
+      Hashtbl.remove(level.order_ids, front_order.id);
+      )
+    else (
+    (* This means we should partially fill the front order *)
+      let filled_order = fill_order(front_order, !remaining) in 
+      let trade = {
+        symbol = incoming_order.symbol;
+        trade_id = Printf.sprintf "Trade_%s_%s" incoming_order.id front_order.id;
+        price = level.price;
+        quantity = !remaining;
+        timestamp = Unix.gettimeofday();
+        buy_order_id = if is_buy(incoming_order) then incoming_order.id else front_order.id;
+        sell_order_id = if is_sell(incoming_order) then incoming_order.id else front_order.id;
+      } in
+      trades := trade :: !trades; (* Remember, :: is cons, add to front of list *)
+      levels.total_qty <- levels.total_qty - !remaining;
+      ignore Queue.pop(level.orders);
+      Queue.add(filled_order, level.orders);
+      remaining := 0;  (* <- for mutable record fields and := for references *)
+    )
+  done;
+  (* Return a tuple of the reversed list of all the trades we executed and the rem. qty. *) 
+  (List.rev !trades, !remaining)
 
 
-
-
-
-
+(* To string for the price level *)
+let to_string(level) =
+  Printf.sprintf "Price %.2f: %d orders %d shares total"
+  level.price order_count(level) level.total_qty

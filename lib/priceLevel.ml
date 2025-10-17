@@ -1,4 +1,3 @@
-
 open Types (* Using types.ml *)
 
 type t {
@@ -98,6 +97,18 @@ let execute_quantity(level, incoming_order, quantity_to_fill) =
   (* Return a tuple of the reversed list of all the trades we executed and the rem. qty. *) 
   (List.rev !trades, !remaining)
 
+
+(* Get all the orders at this level as market data *)
+let get_orders(level) =
+  let new_queue = Queue.create() in
+  let market_data = ref [] in
+  while not Queue.is_empty(level.orders) do
+    let order = Queue.pop(level.orders) in
+    market_data := order :: !market_data;
+    Queue.add(order, new_queue);
+  done;
+  Queue.transfer(new_queue, level.orders);
+  List.rev(!market_data)
 
 (* To string for the price level *)
 let to_string(level) =
